@@ -3,7 +3,10 @@ import torch
 import numpy as np
 from PIL import Image
 from .network_swinir import SwinIR
-from multipledispatch import dispatch
+
+# TODO:
+#   read yaml file and select options to load specific denoising model
+#
 
 class Denoiser:
     """ Denoiser
@@ -14,8 +17,6 @@ class Denoiser:
 
     Methods:
         denoise_array(arr) -> np.ndarray
-        apply_numpy(arr)   -> np.ndarray (HxWx3 uint8)
-        apply_pil(img)     -> PIL.Image
     """
 
     def __init__(self, model_weights_path: str):
@@ -24,10 +25,6 @@ class Denoiser:
             print("Exiting...")
             exit(1)
 
-        # Probably should not hard code this here
-        # Also, is image size set??? Does this mean I have to create another model
-        # for images of different sizes?
-        # https://docs.pytorch.org/tutorials/beginner/saving_loading_models.html
         model = SwinIR(upscale=1,   # For denoising
                        in_ch=3,
                        img_size=128,
@@ -38,22 +35,24 @@ class Denoiser:
                        num_heads=[6, 6, 6, 6],
                        mlp_ratio=2,
                        upsampler='')
+        # https://docs.pytorch.org/tutorials/beginner/saving_loading_models.html
         checkpoint = torch.load(model_weights_path, map_location = "cpu")
         model.load_state_dict(checkpoint["params"], strict=False)
 
         self.model = model
         self.model.eval()
 
-    @dispatch(np.ndarray)
-    def denoise_image(self, data):
-        pass
-
-    @dispatch(Image.Image)
-    def denoise_image(self, data):
-        pass
+    def denoise_image(self, data: np.ndarray | Image.Image) -> Image.Image:
+        if isinstance(data, Image.Image):
+            arr = np.asarray(data)
+        else:
+            arr = data
+        # A copy must be made to suppress writable warning
+        denoised_arr = self.denoise_array(arr.copy())
+        denoised_image = Image.fromarray(denoised_arr)
+        return denoised_image
 
     def denoise_array(self, arr: np.ndarray) -> np.ndarray:
-        # add cli progress bar
         """Denoise an HxWx3 (height, width, channels) uint8 RGB numpy array."""
         if arr.ndim != 3 or arr.shape[2] != 3:
             raise ValueError("denoise_array expects HxWx3 RGB array")
